@@ -17,6 +17,12 @@ public interface EventService {
     /** Local data only - works while the Account Service is down. Ordered by eventTimestamp. */
     List<EventResponse> listForAccount(String accountId);
 
+    /**
+     * Re-sends PENDING events that are at least {@code minAge} old, oldest first, up to {@code batchSize}.
+     * Stops at the first outage (no point hammering a down service). Returns how many were applied.
+     */
+    int redrivePending(java.time.Duration minAge, int batchSize);
+
     /** Needs the Account Service; throws AccountServiceUnavailableException when it is unreachable. */
     AccountBalance getBalance(String accountId);
 }

@@ -33,6 +33,13 @@ gateway:
     limit-for-period: 50
     refresh-period: 1s
 
+# --- Automatic re-drive of events left PENDING by an Account Service outage ----------------
+  redrive:
+    enabled: true
+    interval: 15s       # how often to look for PENDING events
+    min-age: 30s        # only touch events PENDING at least this long (leaves fresh ones to the client's retry)
+    batch-size: 100
+
 # --- Resilience: timeout (above) + retry with backoff + circuit breaker -------------------
 # Order of decoration: Retry( CircuitBreaker( HTTP call with timeouts ) ). Every attempt is
 # seen by the breaker; once it is OPEN, CallNotPermittedException is NOT retried (fail fast).

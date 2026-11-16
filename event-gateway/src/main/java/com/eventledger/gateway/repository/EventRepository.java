@@ -10,6 +10,11 @@ public interface EventRepository extends JpaRepository<Event, Long> {
 
     Optional<Event> findByEventId(String eventId);
 
+    /** Oldest-first page of events still waiting for the Account Service (used by the automatic re-drive). */
+    java.util.List<Event> findByStatusAndReceivedAtBeforeOrderByReceivedAtAsc(
+            com.eventledger.gateway.entity.EventStatus status, java.time.Instant before,
+            org.springframework.data.domain.Pageable page);
+
     /** Chronological by when the event happened (not by arrival); id breaks ties deterministically. */
     List<Event> findByAccountIdOrderByEventTimestampAscIdAsc(String accountId);
 }

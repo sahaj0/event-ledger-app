@@ -10,6 +10,9 @@ spring:
     hibernate:
       ddl-auto: update
     open-in-view: false
+gateway:
+  redrive:
+    enabled: false   # keep the integration test deterministic; the unit tests cover the re-drive
 account:
   service:
     connect-timeout: 500ms

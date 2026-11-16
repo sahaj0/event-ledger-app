@@ -158,6 +158,9 @@ Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST
    after the breaker opened (until then it still answers `503` instantly). Then re-send `evt-100`, `evt-101`, `evt-102`
    with the **same bodies** → each returns `200` and `"status":"APPLIED"`. A retry of a `PENDING` event is *not* rejected as
    a duplicate; it finishes the job. Health returns to `UP` / `CLOSED`.
+7. **Or just wait — no client retry needed:** a background job in the Gateway re-sends events that have been `PENDING`
+   for at least 30 s, every 15 s. About 45 s after the Account Service is back, `GET localhost:8081/events/evt-100`
+   shows `"status":"APPLIED"` on its own, and the Gateway log shows `Re-drive applied N previously PENDING event(s)`.
 
 > **Note:** because the Account Service's database is in memory, restarting it empties its ledger, so the balance after
 > step 6 only reflects the transactions re-sent after the restart (e.g. 30.00 for three 10.00 credits), not the
@@ -203,6 +206,7 @@ mvn test
 |---|---|
 | `account-service/.../AccountApiTest` | balance = Σcredits − Σdebits, idempotency, **20 identical transactions racing at once → applied exactly once**, out-of-order, currency rule, validation, health |
 | `event-gateway/.../EventApiTest` | validation (incl. oversized `metadata` → 400), idempotent replay, **20 identical requests racing at once → exactly one 201, the rest 200**, 409 on conflicting replay, chronological listing, PENDING → retry → APPLIED, reads while the Account Service is down |
+| `event-gateway/.../RedriveTest` | automatic re-drive: PENDING events are applied once the Account Service recovers, it stops at the first outage, a rejected event becomes `REJECTED` without blocking others, fresh events are left to the client's retry |
 | `event-gateway/.../ResilienceTest` | real HTTP against a stub that fails/hangs: bounded retries, circuit opens and **fails fast**, timeouts, 4xx does not trip the breaker, **`traceparent` reaches the Account Service**, incoming traces are continued |
 | `event-gateway/.../RateLimitTest` | the 4th request over a limit of 3 gets `429` + `Retry-After`; reads and health are not limited |
 | `integration-tests/.../FullFlowTest` | real Gateway + real Account Service over HTTP: out-of-order + duplicates + balances, trace id in **both services' logs**, outage → 503 → circuit open → reads still served |
@@ -253,6 +257,13 @@ more downstreams were added.
 Account Service work. The client key is the TCP peer address; `X-Forwarded-For` is intentionally not trusted because
 clients control it.
 
+**Automatic re-drive of PENDING events.** `PendingEventRedriver` runs every 15 s and re-sends events that have been
+`PENDING` for at least 30 s (oldest first, 100 per run; `gateway.redrive.*` in `application.yml`, off with
+`gateway.redrive.enabled=false`). The 30 s minimum keeps it from racing a client's own retry of a fresh event; if both
+do send, the Account Service's idempotency makes it harmless. It uses the same retry + circuit breaker, stops at the
+first outage, and is a no-op while the breaker is open. This closes the gap where events stayed `PENDING` until a
+client happened to retry.
+
 **Graceful degradation.** `GET /events/{id}` and `GET /events?account=` only touch the Gateway's DB and keep working;
 `POST /events` and the balance proxy return `503` with a clear message. `/health` reports `DEGRADED` (still HTTP 200,
 so an orchestrator does not restart a healthy Gateway) while the circuit is not closed.
@@ -269,7 +280,7 @@ Status codes: `201` new event · `200` duplicate (original returned) · `400` va
 * **Logs** — JSON (ECS format, Spring Boot structured logging): `@timestamp`, `log.level`, `service.name`, `traceId`, `message`.
 * **Health** — `GET /health` on both: status, service name, database connectivity (and circuit-breaker state on the Gateway).
 * **Metrics** — Prometheus/`/actuator/metrics`: `gateway.events.submitted{outcome}`, `gateway.account.call{operation,outcome}`
-  (latency timer), `gateway.ratelimit.rejected`, `account.transactions{type,outcome}`, plus Resilience4j and standard HTTP/JVM metrics.
+  (latency timer), `gateway.ratelimit.rejected`, `gateway.events.redriven{outcome}`, `account.transactions{type,outcome}`, plus Resilience4j and standard HTTP/JVM metrics.
 
 ## 9. Project layout
 
@@ -287,5 +298,4 @@ event-ledger-app/
 ## 10. Possible next steps
 
 OTLP export to Jaeger/Zipkin, contract tests (Pact), a file-based or external database so the Account Service survives
-restarts, a bounded/expiring per-client limiter map, and an outbox/queue that re-drives `PENDING` events automatically
-when the Account Service recovers.
+restarts, paging on `GET /events`, stricter timestamp/currency validation, and a bounded/expiring per-client limiter map.

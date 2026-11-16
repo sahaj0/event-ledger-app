@@ -111,6 +111,32 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
+    public int redrivePending(java.time.Duration minAge, int batchSize) {
+        var pending = repository.findByStatusAndReceivedAtBeforeOrderByReceivedAtAsc(EventStatus.PENDING,
+                java.time.Instant.now().minus(minAge), org.springframework.data.domain.PageRequest.of(0, batchSize));
+        int applied = 0;
+        for (Event event : pending) {
+            try {
+                apply(event);
+                applied++;
+                meters.counter("gateway.events.redriven", "outcome", "applied").increment();
+            } catch (AccountServiceUnavailableException down) {
+                log.info("Re-drive paused: Account Service still unavailable ({} event(s) left PENDING)",
+                        pending.size() - applied);
+                break;
+            } catch (AccountRejectedException rejected) {
+                meters.counter("gateway.events.redriven", "outcome", "rejected").increment();   // already marked REJECTED
+            } catch (RuntimeException unexpected) {
+                log.error("Re-drive of event {} failed unexpectedly", event.getEventId(), unexpected);
+            }
+        }
+        if (applied > 0) {
+            log.info("Re-drive applied {} previously PENDING event(s)", applied);
+        }
+        return applied;
+    }
+
+    @Override
     public EventResponse getByEventId(String eventId) {
         return repository.findByEventId(eventId).map(EventResponse::from)
                 .orElseThrow(() -> new EventNotFoundException(eventId));
