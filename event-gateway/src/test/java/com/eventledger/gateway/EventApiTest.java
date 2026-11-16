@@ -183,6 +183,19 @@ class EventApiTest {
     }
 
     @Test
+    void unknownCurrencyCodeIsRejected_butRealOnesAreAccepted() throws Exception {
+        mvc.perform(submit(json(id(), "a", "CREDIT", "5", "2026-05-15T14:02:11Z").replace("\"USD\"", "\"ZZZ\"")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details[0]", containsString("ISO 4217")));
+        verifyNoInteractions(accountClient);
+        accountAccepts();
+        for (String ok : new String[]{"EUR", "INR", "JPY"}) {
+            mvc.perform(submit(json(id(), id(), "CREDIT", "5", "2026-05-15T14:02:11Z").replace("\"USD\"", "\"" + ok + "\"")))
+                    .andExpect(status().isCreated());
+        }
+    }
+
+    @Test
     void oversizedMetadataIsA400NotA500() throws Exception {
         String big = "x".repeat(5000);
         mvc.perform(submit("""

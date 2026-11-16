@@ -136,6 +136,15 @@ class AccountApiTest {
     }
 
     @Test
+    void unknownCurrencyCodeIsRejected() throws Exception {
+        String a = newAccount();
+        mvc.perform(apply(a, a + "-1", "CREDIT", "10", "ZZZ", "2026-05-15T14:00:00Z"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details[0]", containsString("ISO 4217")));
+        mvc.perform(apply(a, a + "-2", "CREDIT", "10", "EUR", "2026-05-15T14:00:00Z")).andExpect(status().isCreated());
+    }
+
+    @Test
     void unknownAccountIs404() throws Exception {
         mvc.perform(get("/accounts/{a}/balance", "nope-" + UUID.randomUUID())).andExpect(status().isNotFound());
     }

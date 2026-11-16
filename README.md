@@ -145,6 +145,7 @@ Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST
 | `-d @samples/invalid-amount.json` (amount 0; try `-5` too) | `400` "amount must be greater than 0" |
 | `-d @samples/invalid-type.json` (`REFUND`) | `400` "type other than CREDIT/DEBIT" |
 | `metadata` larger than 4000 characters (as JSON) | `400` "metadata is too large" |
+| `"currency": "ZZZ"` (3 capital letters but not a real ISO 4217 code) | `400` "is not a recognised ISO 4217 currency code" (`USD`, `EUR`, `INR`, … are accepted) |
 | `curl localhost:8081/events` (no `account` parameter) | `400` "Required query parameter 'account' is missing" |
 
 ### Step E — Distributed tracing
@@ -320,4 +321,5 @@ event-ledger-app/
 
 ## 10. Possible next steps
 
-OTLP export to Jaeger/Zipkin, contract tests (Pact), an external database (Postgres) instead of embedded H2, stricter timestamp/currency validation, and a bounded/expiring per-client limiter map.
+OTLP export to Jaeger/Zipkin, contract tests (Pact), an external database (Postgres) instead of embedded H2, optional plausibility checks on `eventTimestamp`
+(deliberately not enforced: upstream clocks can be skewed), and a bounded/expiring per-client limiter map.
