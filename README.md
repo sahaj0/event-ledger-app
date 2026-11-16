@@ -124,6 +124,7 @@ Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST
 | B4 | **Out of order** — send the *latest* event first: `-d @samples/evt-003.json` | `201` |
 | B5 | `-d @samples/evt-002.json` | `201` |
 | B6 | `curl "localhost:8081/events?account=acct-123"` | `200`, events ordered by `eventTimestamp`: `evt-001, evt-002, evt-003` (not arrival order) |
+| B6b | **Paging (optional):** `curl -i "localhost:8081/events?account=acct-123&page=0&size=2"` | first 2 events (`evt-001`, `evt-002`) and an `X-Total-Count: 3` header; `page=1&size=2` gives `evt-003`. Defaults: `page=0`, `size=100` (max 500); invalid values → `400` |
 | B7 | `curl localhost:8081/events/evt-003` | `200`; `.../events/nope` → `404` |
 | B8 | `curl localhost:8081/accounts/acct-123/balance` | `balance` = **140.00** (150 + 20 − 30; the duplicate did not double count) |
 
@@ -225,7 +226,7 @@ mvn test
 | Where | What it proves |
 |---|---|
 | `account-service/.../AccountApiTest` | balance = Σcredits − Σdebits, idempotency, **20 identical transactions racing at once → applied exactly once**, out-of-order, currency rule, validation, health |
-| `event-gateway/.../EventApiTest` | validation (incl. oversized `metadata` → 400), idempotent replay, **20 identical requests racing at once → exactly one 201, the rest 200**, 409 on conflicting replay, chronological listing, PENDING → retry → APPLIED, reads while the Account Service is down |
+| `event-gateway/.../EventApiTest` | paging (chronological across pages, `X-Total-Count`, invalid params → 400), validation (incl. oversized `metadata` → 400), idempotent replay, **20 identical requests racing at once → exactly one 201, the rest 200**, 409 on conflicting replay, chronological listing, PENDING → retry → APPLIED, reads while the Account Service is down |
 | `event-gateway/.../RedriveTest` | automatic re-drive: PENDING events are applied once the Account Service recovers, it stops at the first outage, a rejected event becomes `REJECTED` without blocking others, fresh events are left to the client's retry |
 | `event-gateway/.../ResilienceTest` | real HTTP against a stub that fails/hangs: bounded retries, circuit opens and **fails fast**, timeouts, 4xx does not trip the breaker, **`traceparent` reaches the Account Service**, incoming traces are continued |
 | `event-gateway/.../RateLimitTest` | the 4th request over a limit of 3 gets `429` + `Retry-After`; reads and health are not limited |
@@ -319,5 +320,4 @@ event-ledger-app/
 
 ## 10. Possible next steps
 
-OTLP export to Jaeger/Zipkin, contract tests (Pact), an external database (Postgres) instead of embedded H2,
-paging on `GET /events`, stricter timestamp/currency validation, and a bounded/expiring per-client limiter map.
+OTLP export to Jaeger/Zipkin, contract tests (Pact), an external database (Postgres) instead of embedded H2, stricter timestamp/currency validation, and a bounded/expiring per-client limiter map.

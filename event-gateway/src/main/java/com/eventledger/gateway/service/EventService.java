@@ -17,6 +17,9 @@ public interface EventService {
     /** Local data only - works while the Account Service is down. Ordered by eventTimestamp. */
     List<EventResponse> listForAccount(String accountId);
 
+    /** One page of an account's events (0-based page), chronological by eventTimestamp; local data only. */
+    com.eventledger.gateway.dto.response.EventPage listForAccount(String accountId, int page, int size);
+
     /**
      * Re-sends PENDING events that are at least {@code minAge} old, oldest first, up to {@code batchSize}.
      * Stops at the first outage (no point hammering a down service). Returns how many were applied.

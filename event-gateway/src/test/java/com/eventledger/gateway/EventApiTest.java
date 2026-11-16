@@ -105,6 +105,40 @@ class EventApiTest {
     }
 
     @Test
+    void listingCanBePagedAndStaysChronologicalAcrossPages() throws Exception {
+        accountAccepts();
+        String a = id();
+        // arrive in scrambled order; timestamps t1..t5
+        String[][] evs = {{"e3", "12:00"}, {"e1", "10:00"}, {"e5", "14:00"}, {"e2", "11:00"}, {"e4", "13:00"}};
+        for (String[] ev : evs) {
+            mvc.perform(submit(json(ev[0] + "-" + a, a, "CREDIT", "1", "2026-05-15T" + ev[1] + ":00Z")))
+                    .andExpect(status().isCreated());
+        }
+        mvc.perform(get("/events").param("account", a).param("page", "0").param("size", "2"))
+                .andExpect(status().isOk()).andExpect(header().string("X-Total-Count", "5"))
+                .andExpect(jsonPath("$[*].eventId", contains("e1-" + a, "e2-" + a)));
+        mvc.perform(get("/events").param("account", a).param("page", "1").param("size", "2"))
+                .andExpect(jsonPath("$[*].eventId", contains("e3-" + a, "e4-" + a)));
+        mvc.perform(get("/events").param("account", a).param("page", "2").param("size", "2"))
+                .andExpect(jsonPath("$[*].eventId", org.hamcrest.Matchers.contains("e5-" + a)));
+        mvc.perform(get("/events").param("account", a).param("page", "3").param("size", "2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(0)))
+                .andExpect(header().string("X-Total-Count", "5"));
+        // no paging parameters: everything (up to the default page size), still chronological
+        mvc.perform(get("/events").param("account", a))
+                .andExpect(jsonPath("$", hasSize(5))).andExpect(header().string("X-Total-Count", "5"));
+    }
+
+    @Test
+    void invalidPagingParametersAreA400() throws Exception {
+        for (String[] bad : new String[][]{{"size", "0"}, {"size", "501"}, {"page", "-1"}, {"page", "abc"}}) {
+            mvc.perform(get("/events").param("account", "x").param(bad[0], bad[1]))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400));
+        }
+    }
+
+    @Test
     void getUnknownEventIs404() throws Exception {
         mvc.perform(get("/events/{id}", "nope-" + id())).andExpect(status().isNotFound());
     }

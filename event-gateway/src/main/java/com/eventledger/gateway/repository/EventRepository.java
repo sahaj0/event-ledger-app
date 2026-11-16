@@ -15,6 +15,10 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             com.eventledger.gateway.entity.EventStatus status, java.time.Instant before,
             org.springframework.data.domain.Pageable page);
 
+    /** One page of an account's events; the caller supplies the chronological sort. */
+    org.springframework.data.domain.Page<Event> findByAccountId(String accountId,
+                                                                org.springframework.data.domain.Pageable pageable);
+
     /** Chronological by when the event happened (not by arrival); id breaks ties deterministically. */
     List<Event> findByAccountIdOrderByEventTimestampAscIdAsc(String accountId);
 }

@@ -149,6 +149,16 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
+    public com.eventledger.gateway.dto.response.EventPage listForAccount(String accountId, int page, int size) {
+        var sort = org.springframework.data.domain.Sort.by("eventTimestamp").ascending()
+                .and(org.springframework.data.domain.Sort.by("id").ascending());
+        var result = repository.findByAccountId(accountId,
+                org.springframework.data.domain.PageRequest.of(page, size, sort));
+        return new com.eventledger.gateway.dto.response.EventPage(
+                result.getContent().stream().map(EventResponse::from).toList(), result.getTotalElements());
+    }
+
+    @Override
     public AccountBalance getBalance(String accountId) {
         try {
             return accountClient.getBalance(accountId);

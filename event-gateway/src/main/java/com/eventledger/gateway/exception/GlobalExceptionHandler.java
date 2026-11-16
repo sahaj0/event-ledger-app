@@ -51,6 +51,18 @@ public class GlobalExceptionHandler {
                 req, List.of(), null);
     }
 
+    @ExceptionHandler(InvalidRequestException.class)
+    ResponseEntity<ApiError> invalid(InvalidRequestException ex, HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, ex.getMessage(), req, List.of(), null);
+    }
+
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiError> typeMismatch(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
+                                          HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "Parameter '" + ex.getName() + "' has an invalid value", req,
+                List.of(), null);
+    }
+
     @ExceptionHandler(EventNotFoundException.class)
     ResponseEntity<ApiError> notFound(EventNotFoundException ex, HttpServletRequest req) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), req, List.of(), null);

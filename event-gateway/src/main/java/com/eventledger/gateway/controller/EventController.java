@@ -39,9 +39,22 @@ public class EventController {
         return service.getByEventId(id);
     }
 
+    private static final int MAX_PAGE_SIZE = 500;
+
+    /**
+     * Chronological by eventTimestamp. Optional paging: {@code page} (0-based, default 0) and {@code size}
+     * (default 100, max 500). The account's total number of events is returned in the {@code X-Total-Count} header.
+     */
     @GetMapping("/events")
-    public List<EventResponse> list(@RequestParam("account") String accountId) {
-        return service.listForAccount(accountId);
+    public ResponseEntity<List<EventResponse>> list(@RequestParam("account") String accountId,
+                                                    @RequestParam(defaultValue = "0") int page,
+                                                    @RequestParam(defaultValue = "100") int size) {
+        if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
+            throw new com.eventledger.gateway.exception.InvalidRequestException(
+                    "page must be >= 0 and size must be between 1 and " + MAX_PAGE_SIZE);
+        }
+        var result = service.listForAccount(accountId, page, size);
+        return ResponseEntity.ok().header("X-Total-Count", String.valueOf(result.total())).body(result.items());
     }
 
     /** Pass-through to the Account Service: 503 with a clear message when it is unreachable. */
