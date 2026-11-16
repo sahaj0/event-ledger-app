@@ -74,7 +74,25 @@ curl http://localhost:8081/health
 
 Both should return `"status":"UP"`. The Gateway also shows `accountService.circuitBreaker: CLOSED`.
 
-> Data is **in memory**: restarting a service clears its data. Always restart **both** services for a clean slate.
+> By default data is **in memory**: restarting a service clears its data. Always restart **both** services for a clean slate.
+
+**Optional: keep data across restarts.** Both services can use an embedded *file-based* H2 database instead.
+Set these before starting them (the files land in a `data/` folder, which is git-ignored):
+
+```bash
+# macOS / Linux / Git Bash
+ACCOUNT_DB_URL=jdbc:h2:file:./data/accountdb mvn spring-boot:run      # in account-service/
+GATEWAY_DB_URL=jdbc:h2:file:./data/eventdb  mvn spring-boot:run      # in event-gateway/
+```
+
+```powershell
+# Windows PowerShell
+$env:ACCOUNT_DB_URL = "jdbc:h2:file:./data/accountdb"; mvn spring-boot:run     # in account-service
+$env:GATEWAY_DB_URL = "jdbc:h2:file:./data/eventdb";  mvn spring-boot:run     # in event-gateway
+```
+
+`docker compose up` already does this with named volumes, so data survives container restarts;
+`docker compose down -v` wipes it.
 
 ## 4. Test it end to end
 
@@ -162,9 +180,10 @@ Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST
    for at least 30 s, every 15 s. About 45 s after the Account Service is back, `GET localhost:8081/events/evt-100`
    shows `"status":"APPLIED"` on its own, and the Gateway log shows `Re-drive applied N previously PENDING event(s)`.
 
-> **Note:** because the Account Service's database is in memory, restarting it empties its ledger, so the balance after
+> **Note:** with the default in-memory database, restarting the Account Service empties its ledger, so the balance after
 > step 6 only reflects the transactions re-sent after the restart (e.g. 30.00 for three 10.00 credits), not the
-> earlier ones. The Gateway still lists those earlier events as `APPLIED`.
+> earlier ones, while the Gateway still lists those earlier events as `APPLIED`. Start both services with the
+> file-based database (see section 3) to keep the ledger across the restart.
 
 ### Step G — Rate limiting
 
@@ -220,7 +239,8 @@ mvn test
 | Maven: `PKIX path building failed` | Java does not trust your network's TLS inspection certificate. Build on a network without it, or import your organisation's CA into the JDK (`keytool -importcert -cacerts`). Do not disable SSL checks. |
 | `mvn` / `JAVA_HOME is not defined correctly` | Set `JAVA_HOME` to a JDK 17 and put Maven's `bin` on the `PATH` (see section 1). |
 | `503` right after the Account Service is back | The circuit breaker stays open for 15 s; wait, then retry the same `eventId`. |
-| Balance is lower than expected after restarting the Account Service | Its in-memory database was wiped (see the note in Step F). |
+| Balance is lower than expected after restarting the Account Service | Its in-memory database was wiped (see the note in Step F). Use the file-based database (section 3). |
+| `Database may be already in use` | Two copies are using the same `data/*.mv.db` file. Stop the other copy first. |
 
 ## 7. Design decisions
 
@@ -297,5 +317,5 @@ event-ledger-app/
 
 ## 10. Possible next steps
 
-OTLP export to Jaeger/Zipkin, contract tests (Pact), a file-based or external database so the Account Service survives
-restarts, paging on `GET /events`, stricter timestamp/currency validation, and a bounded/expiring per-client limiter map.
+OTLP export to Jaeger/Zipkin, contract tests (Pact), an external database (Postgres) instead of embedded H2,
+paging on `GET /events`, stricter timestamp/currency validation, and a bounded/expiring per-client limiter map.

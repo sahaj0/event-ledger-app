@@ -2,7 +2,8 @@ spring:
   application:
     name: account-service
   datasource:
-    url: jdbc:h2:mem:accountdb;DB_CLOSE_DELAY=-1
+    # In-memory by default. Set ACCOUNT_DB_URL=jdbc:h2:file:./data/accountdb to keep the ledger across restarts.
+    url: ${ACCOUNT_DB_URL:jdbc:h2:mem:accountdb;DB_CLOSE_DELAY=-1}
     username: sa
     password:
     driver-class-name: org.h2.Driver

@@ -9,7 +9,7 @@ COPY account-service/src account-service/src
 RUN mvn -q -B -pl account-service -am package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app && mkdir /data && chown app:app /data
 USER app
 WORKDIR /app
 COPY --from=build /build/account-service/target/account-service-*-exec.jar app.jar

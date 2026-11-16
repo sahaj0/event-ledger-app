@@ -9,7 +9,7 @@ COPY event-gateway/src event-gateway/src
 RUN mvn -q -B -pl event-gateway -am package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app && mkdir /data && chown app:app /data
 USER app
 WORKDIR /app
 COPY --from=build /build/event-gateway/target/event-gateway-*-exec.jar app.jar

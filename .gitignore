@@ -37,3 +37,8 @@ build/
 
 ### Logs ###
 *.log
+
+### Local file-based H2 data (ACCOUNT_DB_URL / GATEWAY_DB_URL) ###
+data/
+*.mv.db
+*.trace.db

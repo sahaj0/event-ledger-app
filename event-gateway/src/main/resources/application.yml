@@ -2,7 +2,8 @@ spring:
   application:
     name: event-gateway
   datasource:
-    url: jdbc:h2:mem:eventdb;DB_CLOSE_DELAY=-1
+    # In-memory by default. Set GATEWAY_DB_URL=jdbc:h2:file:./data/eventdb to keep events across restarts.
+    url: ${GATEWAY_DB_URL:jdbc:h2:mem:eventdb;DB_CLOSE_DELAY=-1}
     username: sa
     password:
     driver-class-name: org.h2.Driver
