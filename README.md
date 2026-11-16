@@ -2,6 +2,7 @@
 
 Two Spring Boot microservices that process financial transaction events (CREDIT / DEBIT) from upstream
 systems that may deliver events **out of order** and **more than once**.
+**Problem statement:** [Event Ledger take-home assignment (.docx)](docs/Java-AI-Assessment2.docx) — the document this repository solves.
 
 ```
 Client ──HTTP──▶  Event Gateway  (:8081, public)  ──REST (sync)──▶  Account Service (:8082, internal)
@@ -310,6 +311,7 @@ event-ledger-app/
 ├── account-service/         :8082
 ├── event-gateway/           :8081
 ├── integration-tests/       boots both services in one JVM and tests the real flow
+├── docs/                    problem statement (original assignment, .docx)
 ├── postman/                 importable Postman collection
 ├── samples/                 example request bodies used by the curl commands above
 └── docker-compose.yml
