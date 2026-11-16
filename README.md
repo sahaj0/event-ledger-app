@@ -66,6 +66,8 @@ Wait for `Started EventGatewayApplication`.
 docker compose up --build
 ```
 
+(Docker Compose also starts **Zipkin** at http://localhost:9411 for viewing traces — see Step E.)
+
 **Check both are up:**
 
 ```bash
@@ -160,7 +162,15 @@ Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST
 3. Search both logs for that id (`grep <traceId> gateway.log account.log`, or `Select-String` on Windows).
    You should see the Gateway's `Stored event … as PENDING` / `Event … APPLIED` **and** the Account Service's
    `Applied CREDIT of …` — all with the same `"traceId"`. That is one request traced across both services.
-4. *Continue an existing trace:* add the request header
+4. **See it in Zipkin (optional, visual):** run Zipkin and tell both services to export their spans to it.
+   * **Docker Compose** does all of this for you: `docker compose up --build`, then open **http://localhost:9411**.
+   * **Locally,** start Zipkin with `docker run -d -p 9411:9411 openzipkin/zipkin`, then start each service with
+     `ZIPKIN_ENABLED=true` (PowerShell: `$env:ZIPKIN_ENABLED = "true"`); the endpoint defaults to
+     `http://localhost:9411/api/v2/spans` (override with `ZIPKIN_ENDPOINT`).
+   * Send a `POST /events`, then in the Zipkin UI click **Run Query** (or paste the `X-Trace-Id` into "Go to trace").
+     One trace shows spans from **both** `event-gateway` (the incoming request and the call to the Account Service)
+     and `account-service` (handling that call), with timings.
+5. *Continue an existing trace:* add the request header
    `traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`.
    The response `X-Trace-Id` is then `4bf92f3577b34da6a3ce929d0e0e4736`, and both logs contain it.
 
@@ -299,7 +309,8 @@ Status codes: `201` new event · `200` duplicate (original returned) · `400` va
 
 * **Tracing** — OpenTelemetry via Micrometer Tracing. The Gateway creates the trace (or continues an incoming W3C
   `traceparent`), `RestClient` propagates it to the Account Service, and both put `traceId`/`spanId` in every log
-  line. Every response carries an `X-Trace-Id` header (also in error bodies).
+  line. Every response carries an `X-Trace-Id` header (also in error bodies). Spans can be exported to **Zipkin**
+  (`ZIPKIN_ENABLED=true`; included in `docker compose`, UI on http://localhost:9411) — see Step E.
 * **Logs** — JSON (ECS format, Spring Boot structured logging): `@timestamp`, `log.level`, `service.name`, `traceId`, `message`.
 * **Health** — `GET /health` on both: status, service name, database connectivity (and circuit-breaker state on the Gateway).
 * **Metrics** — Prometheus/`/actuator/metrics`: `gateway.events.submitted{outcome}`, `gateway.account.call{operation,outcome}`
@@ -321,5 +332,5 @@ event-ledger-app/
 
 ## 10. Possible next steps
 
-OTLP export to Jaeger/Zipkin, contract tests (Pact), an external database (Postgres) instead of embedded H2, optional plausibility checks on `eventTimestamp`
+OTLP export / an OpenTelemetry Collector, contract tests (Pact), an external database (Postgres) instead of embedded H2, optional plausibility checks on `eventTimestamp`
 (deliberately not enforced: upstream clocks can be skewed), and a bounded/expiring per-client limiter map.

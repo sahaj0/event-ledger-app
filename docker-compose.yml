@@ -10,8 +10,12 @@ services:
     environment:
       # embedded file-based H2 on a named volume: the ledger survives container restarts
       ACCOUNT_DB_URL: jdbc:h2:file:/data/accountdb
+      ZIPKIN_ENABLED: "true"
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     volumes:
       - account-data:/data
+    depends_on:
+      - zipkin
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8082/health"]
       interval: 5s
@@ -28,17 +32,27 @@ services:
     environment:
       ACCOUNT_SERVICE_URL: http://account-service:8082
       GATEWAY_DB_URL: jdbc:h2:file:/data/eventdb
+      ZIPKIN_ENABLED: "true"
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     volumes:
       - gateway-data:/data
     depends_on:
       account-service:
         condition: service_healthy
+      zipkin:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
       interval: 5s
       timeout: 3s
       retries: 20
       start_period: 15s
+
+  # Trace viewer: open http://localhost:9411 and search by trace id / service name.
+  zipkin:
+    image: openzipkin/zipkin:3
+    ports:
+      - "9411:9411"
 
 volumes:
   account-data:

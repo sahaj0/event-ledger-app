@@ -39,6 +39,11 @@
             <artifactId>micrometer-tracing-bridge-otel</artifactId>
         </dependency>
         <dependency>
+            <!-- exports the OpenTelemetry spans to Zipkin (off unless ZIPKIN_ENABLED=true) -->
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-zipkin</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
