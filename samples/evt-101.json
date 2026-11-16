@@ -1,0 +1,8 @@
+{
+  "eventId": "evt-101",
+  "accountId": "acct-123",
+  "type": "CREDIT",
+  "amount": 10.00,
+  "currency": "USD",
+  "eventTimestamp": "2026-05-15T13:05:00Z"
+}

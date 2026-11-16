@@ -1,0 +1,7 @@
+{
+  "eventId": "evt-eur",
+  "type": "CREDIT",
+  "amount": 1,
+  "currency": "EUR",
+  "eventTimestamp": "2026-05-15T09:00:00Z"
+}

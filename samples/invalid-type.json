@@ -1,0 +1,8 @@
+{
+  "eventId": "bad-2",
+  "accountId": "acct-123",
+  "type": "REFUND",
+  "amount": 5,
+  "currency": "USD",
+  "eventTimestamp": "2026-05-15T09:00:00Z"
+}

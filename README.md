@@ -17,54 +17,182 @@ Client ──HTTP──▶  Event Gateway  (:8081, public)  ──REST (sync)─
 The services are independent processes with separate databases and no shared code: each has its own copy of
 the HTTP contract (`event-gateway/.../client/Account*.java` vs `account-service/.../dto`).
 
-## Prerequisites
+---
 
-* JDK 17+ and Maven 3.8+ (to build/run locally), **or** Docker with Compose.
+## 1. Prerequisites
 
-## Run
+* **JDK 17+** (`java -version`) and **Maven 3.8+** (`mvn -v`) — or just **Docker** with Compose.
+* **Postman** (optional) or **curl** to call the APIs.
+* On Windows, `JAVA_HOME` must point to the JDK and `mvn` must be on the `PATH`. For example, in PowerShell:
+  ```powershell
+  $env:JAVA_HOME = "C:\path\to\jdk-17"
+  $env:PATH = "C:\path\to\apache-maven\bin;$env:PATH"
+  ```
 
-**Docker Compose**
+## 2. Get the code and build
+
+```bash
+git clone https://github.com/sahaj0/event-ledger-app.git
+cd event-ledger-app
+mvn -DskipTests install
+```
+
+## 3. Start the services
+
+Use **two terminals** (open both in the project root; on Windows set `JAVA_HOME`/`PATH` in each).
+
+**Terminal 1 — Account Service (port 8082)**
+
+```bash
+cd account-service
+mvn spring-boot:run
+```
+
+Wait for `Started AccountServiceApplication`.
+
+**Terminal 2 — Event Gateway (port 8081)**
+
+```bash
+cd event-gateway
+mvn spring-boot:run
+```
+
+Wait for `Started EventGatewayApplication`.
+
+**Or with Docker instead** (from the project root; starts both, only the Gateway is published):
 
 ```bash
 docker compose up --build
 ```
 
-**Manually (two terminals)**
+**Check both are up:**
 
 ```bash
-mvn -q -DskipTests install
-cd account-service && mvn spring-boot:run     # terminal 1  -> :8082
-cd event-gateway   && mvn spring-boot:run     # terminal 2  -> :8081
+curl http://localhost:8082/health
+curl http://localhost:8081/health
 ```
 
-The Gateway finds the Account Service via `ACCOUNT_SERVICE_URL` (default `http://localhost:8082`).
+Both should return `"status":"UP"`. The Gateway also shows `accountService.circuitBreaker: CLOSED`.
 
-## Try it
+> Data is **in memory**: restarting a service clears its data. Always restart **both** services for a clean slate.
 
-```bash
-curl -i -X POST localhost:8081/events -H 'Content-Type: application/json' -d '{
-  "eventId":"evt-001","accountId":"acct-123","type":"CREDIT","amount":150.00,"currency":"USD",
-  "eventTimestamp":"2026-05-15T14:02:11Z","metadata":{"source":"mainframe-batch","batchId":"B-9042"}}'
-# 201 Created. Send it again -> 200 OK with the original event, balance unchanged.
+## 4. Test it end to end
 
-curl 'localhost:8081/events?account=acct-123'        # chronological by eventTimestamp
-curl localhost:8081/accounts/acct-123/balance        # {"accountId":"acct-123","balance":150.00,"currency":"USD"}
-curl localhost:8081/health
-curl localhost:8081/actuator/prometheus              # metrics (Prometheus format)
-```
+Pick **one** way to call the API:
 
-Status codes: `201` new event · `200` duplicate (original returned) · `400` validation · `404` unknown id ·
-`409` same eventId with different content · `422` rejected by Account Service (e.g. currency mismatch) ·
-`429` rate limit exceeded (`Retry-After` set) ·
-`503` Account Service unavailable (event kept as `PENDING`, `Retry-After` header set).
+* **Postman:** import [`postman/event-ledger.postman_collection.json`](postman/event-ledger.postman_collection.json)
+  (Import → select the file). It has the variables `gateway=http://localhost:8081` and `account=http://localhost:8082`
+  and one request per step below, each with a status-code check. Run the folders in order, or use the steps below.
+* **curl:** run the commands below from the project root (they read the payloads from [`samples/`](samples)).
+  On Windows PowerShell use `curl.exe` instead of `curl` (plain `curl` is an alias of another command).
 
-**Rate limiting.** `POST /events` is limited per client address (default 50 requests/second, configurable under
-`gateway.rate-limit.*` in `event-gateway/src/main/resources/application.yml`, can be disabled with
-`gateway.rate-limit.enabled=false`). Excess requests are refused immediately with `429` before any database or
-Account Service work. Reads and `/health` are not limited. The client key is the TCP peer address;
-`X-Forwarded-For` is intentionally not trusted because clients control it.
+Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST /events` only exists on 8081.
 
-## Tests
+### Step A — Health
+
+| Request | Expected |
+|---|---|
+| `GET :8082/health` | `200`, `UP`, database `UP` |
+| `GET :8081/health` | `200`, `UP`, circuit breaker `CLOSED` |
+
+### Step B — Core flow through the Gateway
+
+| # | Request | Expected |
+|---|---|---|
+| B1 | Create an event: `curl -i -X POST localhost:8081/events -H "Content-Type: application/json" -d @samples/evt-001.json` | `201`, `"status":"APPLIED"`, `Location` and `X-Trace-Id` headers |
+| B2 | **Duplicate** — send B1 again | `200` with the original event; balance unchanged |
+| B3 | **Conflict** — `-d @samples/evt-001-conflict.json` (same id, different amount) | `409` "already exists with different content" |
+| B4 | **Out of order** — send the *latest* event first: `-d @samples/evt-003.json` | `201` |
+| B5 | `-d @samples/evt-002.json` | `201` |
+| B6 | `curl "localhost:8081/events?account=acct-123"` | `200`, events ordered by `eventTimestamp`: `evt-001, evt-002, evt-003` (not arrival order) |
+| B7 | `curl localhost:8081/events/evt-003` | `200`; `.../events/nope` → `404` |
+| B8 | `curl localhost:8081/accounts/acct-123/balance` | `balance` = **140.00** (150 + 20 − 30; the duplicate did not double count) |
+
+### Step C — Account Service directly
+
+| # | Request | Expected |
+|---|---|---|
+| C1 | `curl localhost:8082/accounts/acct-123/balance` | `140.00`, currency `USD` |
+| C2 | `curl localhost:8082/accounts/acct-123` | balance, `"transactionCount":3`, recent transactions |
+| C3 | `curl -i -X POST localhost:8082/accounts/acct-123/transactions -H "Content-Type: application/json" -d @samples/evt-001.json` | `200`, `"duplicate":true`, balance still 140.00 (the Account Service is idempotent on its own) |
+| C4 | `... -d @samples/account-eur.json` (EUR on a USD account) | `422` "holds USD" |
+
+### Step D — Validation (Gateway)
+
+| Request | Expected |
+|---|---|
+| `-d "{}"` | `400` "Validation failed", lists every missing field |
+| `-d @samples/invalid-amount.json` (amount 0; try `-5` too) | `400` "amount must be greater than 0" |
+| `-d @samples/invalid-type.json` (`REFUND`) | `400` "type other than CREDIT/DEBIT" |
+| `curl localhost:8081/events` (no `account` parameter) | `400` "Required query parameter 'account' is missing" |
+
+### Step E — Distributed tracing
+
+1. Start each service with its output also saved to a file (run from the module folders):
+   ```bash
+   mvn spring-boot:run 2>&1 | tee account.log     # in account-service/
+   mvn spring-boot:run 2>&1 | tee gateway.log     # in event-gateway/
+   ```
+   (`*.log` is git-ignored. On Windows PowerShell use `| Tee-Object -FilePath account.log`.)
+2. Send any `POST /events` with a **new** `eventId` and copy the `X-Trace-Id` response header.
+3. Search both logs for that id (`grep <traceId> gateway.log account.log`, or `Select-String` on Windows).
+   You should see the Gateway's `Stored event … as PENDING` / `Event … APPLIED` **and** the Account Service's
+   `Applied CREDIT of …` — all with the same `"traceId"`. That is one request traced across both services.
+4. *Continue an existing trace:* add the request header
+   `traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01`.
+   The response `X-Trace-Id` is then `4bf92f3577b34da6a3ce929d0e0e4736`, and both logs contain it.
+
+### Step F — Account Service outage (resilience + graceful degradation)
+
+1. **Stop the Account Service** (`Ctrl+C` in terminal 1). Keep the Gateway running.
+2. `POST` `samples/evt-100.json`, then `evt-101.json`, then `evt-102.json` to `localhost:8081/events`.
+   * Each returns **`503`** with a `Retry-After: 15` header and a message that the event was *stored as PENDING*.
+   * The first two take about a second (3 attempts with backoff); after about 5 failed calls the **circuit breaker
+     opens** and the next ones fail in milliseconds.
+3. `GET localhost:8081/health` → `200`, `"status":"DEGRADED"`, `circuitBreaker: OPEN` (still 200: the Gateway itself is healthy).
+4. **Reads still work:** `GET localhost:8081/events/evt-100` → `200`, `"status":"PENDING"`;
+   `GET localhost:8081/events?account=acct-123` → `200`.
+5. `GET localhost:8081/accounts/acct-123/balance` → **`503`** "Account Service is unreachable".
+6. **Recover:** start the Account Service again, wait for `Started AccountServiceApplication` **and at least 15 seconds**
+   after the breaker opened (until then it still answers `503` instantly). Then re-send `evt-100`, `evt-101`, `evt-102`
+   with the **same bodies** → each returns `200` and `"status":"APPLIED"`. A retry of a `PENDING` event is *not* rejected as
+   a duplicate; it finishes the job. Health returns to `UP` / `CLOSED`.
+
+> **Note:** because the Account Service's database is in memory, restarting it empties its ledger, so the balance after
+> step 6 only reflects the transactions re-sent after the restart (e.g. 30.00 for three 10.00 credits), not the
+> earlier ones. The Gateway still lists those earlier events as `APPLIED`.
+
+### Step G — Rate limiting
+
+`POST /events` is limited to **50 requests per second per client** (`429` + `Retry-After` when exceeded). Reads and
+`/health` are never limited.
+
+* **Burst test (PowerShell):** sends 150 requests at once and counts the status codes.
+  ```powershell
+  Add-Type -AssemblyName System.Net.Http; [Net.ServicePointManager]::DefaultConnectionLimit = 50; $c = New-Object System.Net.Http.HttpClient; $tasks = 1..150 | % { $json = '{"eventId":"burst-' + [guid]::NewGuid() + '","accountId":"acct-burst","type":"CREDIT","amount":1,"currency":"USD","eventTimestamp":"2026-05-15T09:00:00Z"}'; $c.PostAsync("http://localhost:8081/events", (New-Object System.Net.Http.StringContent($json, [Text.Encoding]::UTF8, "application/json"))) }; [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]$tasks); $tasks | % { [int]$_.Result.StatusCode } | Group-Object | Select Count, Name
+  ```
+  Expect a mix of `201` and `429` (the exact split varies with speed; roughly 50 per second get through).
+* **Hand test in Postman/curl:** temporarily set `gateway.rate-limit.limit-for-period: 3` and
+  `refresh-period: 1m` in `event-gateway/src/main/resources/application.yml`, restart the Gateway, then send 4 new
+  events: the 4th returns `429` with `Retry-After: 60`. Revert the file afterwards.
+
+### Step H — Metrics
+
+* Gateway: `GET localhost:8081/actuator/prometheus` — look for `gateway_events_submitted_total{outcome=...}`
+  (`applied`, `duplicate`, `conflict`, `unavailable`), `gateway_account_call_seconds_count`,
+  `gateway_ratelimit_rejected_total`, `resilience4j_circuitbreaker_state`.
+* Account Service: `GET localhost:8082/actuator/prometheus` — `account_transactions_total{type,outcome}`.
+* A single metric as JSON: `GET localhost:8081/actuator/metrics/gateway.events.submitted`.
+
+After only Steps A–D on a fresh start, the Gateway shows `applied` = 3, `duplicate` = 1, `conflict` = 1
+(validation errors are rejected before they are counted).
+
+### Dev-only database consoles
+
+`http://localhost:8081/h2-console` (JDBC URL `jdbc:h2:mem:eventdb`) and `http://localhost:8082/h2-console`
+(`jdbc:h2:mem:accountdb`); user `sa`, empty password. These only work while the service is running.
+
+## 5. Automated tests
 
 ```bash
 mvn test
@@ -73,11 +201,23 @@ mvn test
 | Where | What it proves |
 |---|---|
 | `account-service/.../AccountApiTest` | balance = Σcredits − Σdebits, idempotency, out-of-order, currency rule, validation, health |
-| `event-gateway/.../EventApiTest` | validation, idempotent replay, 409 on conflicting replay, chronological listing, PENDING → retry → APPLIED, reads while Account is down |
-| `event-gateway/.../ResilienceTest` | real HTTP against a stub that fails/hangs: bounded retries, circuit opens and **fails fast**, timeouts, 4xx doesn't trip the breaker, **`traceparent` reaches the Account Service** and incoming traces are continued |
+| `event-gateway/.../EventApiTest` | validation, idempotent replay, 409 on conflicting replay, chronological listing, PENDING → retry → APPLIED, reads while the Account Service is down |
+| `event-gateway/.../ResilienceTest` | real HTTP against a stub that fails/hangs: bounded retries, circuit opens and **fails fast**, timeouts, 4xx does not trip the breaker, **`traceparent` reaches the Account Service**, incoming traces are continued |
+| `event-gateway/.../RateLimitTest` | the 4th request over a limit of 3 gets `429` + `Retry-After`; reads and health are not limited |
 | `integration-tests/.../FullFlowTest` | real Gateway + real Account Service over HTTP: out-of-order + duplicates + balances, trace id in **both services' logs**, outage → 503 → circuit open → reads still served |
 
-## Design decisions
+## 6. Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `Port 8081 (or 8082) was already in use` | Another copy is running. Stop it, or find the process: `netstat -ano \| findstr :8081` (Windows). |
+| `POST http://localhost:8082/events` → `404` | Wrong service. `/events` lives on the **Gateway (8081)**. |
+| Maven: `PKIX path building failed` | Java does not trust your network's TLS inspection certificate. Build on a network without it, or import your organisation's CA into the JDK (`keytool -importcert -cacerts`). Do not disable SSL checks. |
+| `mvn` / `JAVA_HOME is not defined correctly` | Set `JAVA_HOME` to a JDK 17 and put Maven's `bin` on the `PATH` (see section 1). |
+| `503` right after the Account Service is back | The circuit breaker stays open for 15 s; wait, then retry the same `eventId`. |
+| Balance is lower than expected after restarting the Account Service | Its in-memory database was wiped (see the note in Step F). |
+
+## 7. Design decisions
 
 **Idempotency.** `eventId` has a UNIQUE constraint in both services, so even two racing identical requests cannot
 both insert (the loser catches the constraint violation and answers with the winner's row). Neither service holds a
@@ -106,36 +246,45 @@ I chose these over a bulkhead because the realistic failure here is a *down or s
 bounded waiting), and Tomcat's request threads already bound concurrency; a bulkhead would be the next addition if
 more downstreams were added.
 
+**Rate limiting.** `POST /events` is limited per client address (default 50 requests/second, configurable under
+`gateway.rate-limit.*` in `event-gateway/src/main/resources/application.yml`, can be disabled with
+`gateway.rate-limit.enabled=false`). Excess requests are refused immediately with `429` before any database or
+Account Service work. The client key is the TCP peer address; `X-Forwarded-For` is intentionally not trusted because
+clients control it.
+
 **Graceful degradation.** `GET /events/{id}` and `GET /events?account=` only touch the Gateway's DB and keep working;
 `POST /events` and the balance proxy return `503` with a clear message. `/health` reports `DEGRADED` (still HTTP 200,
 so an orchestrator does not restart a healthy Gateway) while the circuit is not closed.
 
-## Observability
+Status codes: `201` new event · `200` duplicate (original returned) · `400` validation · `404` unknown id ·
+`409` same eventId with different content · `422` rejected by Account Service (e.g. currency mismatch) ·
+`429` rate limit exceeded (`Retry-After` set) · `503` Account Service unavailable (event kept as `PENDING`, `Retry-After` set).
+
+## 8. Observability
 
 * **Tracing** — OpenTelemetry via Micrometer Tracing. The Gateway creates the trace (or continues an incoming W3C
   `traceparent`), `RestClient` propagates it to the Account Service, and both put `traceId`/`spanId` in every log
-  line. Every response carries an `X-Trace-Id` header (also in error bodies) — grep it in both services' logs.
+  line. Every response carries an `X-Trace-Id` header (also in error bodies).
 * **Logs** — JSON (ECS format, Spring Boot structured logging): `@timestamp`, `log.level`, `service.name`, `traceId`, `message`.
 * **Health** — `GET /health` on both: status, service name, database connectivity (and circuit-breaker state on the Gateway).
-* **Metrics** — `/actuator/prometheus` and `/actuator/metrics`: `gateway.events.submitted{outcome}`,
-  `gateway.account.call{operation,outcome}` (latency timer), `account.transactions{type,outcome}`, plus Resilience4j
-  circuit-breaker/retry metrics and standard HTTP/JVM metrics.
+* **Metrics** — Prometheus/`/actuator/metrics`: `gateway.events.submitted{outcome}`, `gateway.account.call{operation,outcome}`
+  (latency timer), `gateway.ratelimit.rejected`, `account.transactions{type,outcome}`, plus Resilience4j and standard HTTP/JVM metrics.
 
-## Project layout
+## 9. Project layout
 
 ```
-event-ledger/
+event-ledger-app/
 ├── pom.xml                  parent / aggregator
 ├── account-service/         :8082
 ├── event-gateway/           :8081
 ├── integration-tests/       boots both services in one JVM and tests the real flow
+├── postman/                 importable Postman collection
+├── samples/                 example request bodies used by the curl commands above
 └── docker-compose.yml
 ```
 
-H2 consoles (dev only): `http://localhost:8081/h2-console` (`jdbc:h2:mem:eventdb`) and
-`http://localhost:8082/h2-console` (`jdbc:h2:mem:accountdb`), user `sa`, empty password.
+## 10. Possible next steps
 
-## Possible next steps
-
-OTLP export to Jaeger/Zipkin, contract tests (Pact), a bounded/expiring per-client limiter map, and an outbox/queue that
-re-drives `PENDING` events automatically when the Account Service recovers.
+OTLP export to Jaeger/Zipkin, contract tests (Pact), a file-based or external database so the Account Service survives
+restarts, a bounded/expiring per-client limiter map, and an outbox/queue that re-drives `PENDING` events automatically
+when the Account Service recovers.

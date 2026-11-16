@@ -1,0 +1,1027 @@
+{
+    "info":  {
+                 "name":  "Event Ledger",
+                 "description":  "End-to-end checks for the Event Gateway (:8081) and Account Service (:8082). See README section 4.",
+                 "schema":  "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+             },
+    "variable":  [
+                     {
+                         "key":  "gateway",
+                         "value":  "http://localhost:8081"
+                     },
+                     {
+                         "key":  "account",
+                         "value":  "http://localhost:8082"
+                     }
+                 ],
+    "item":  [
+                 {
+                     "name":  "A - Health",
+                     "description":  "Both services must be up.",
+                     "item":  [
+                                  {
+                                      "name":  "A1 Account Service health",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{account}}/health",
+                                                                  "host":  [
+                                                                               "{{account}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "health"
+                                                                           ]
+                                                              },
+                                                      "description":  "Expect 200, status UP, database UP."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "A2 Gateway health",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/health",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "health"
+                                                                           ]
+                                                              },
+                                                      "description":  "Expect 200, status UP, circuitBreaker CLOSED."
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "B - Core flow (via Gateway)",
+                     "description":  "Run in order on a fresh start.",
+                     "item":  [
+                                  {
+                                      "name":  "B1 Create evt-001",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 201\u0027, function () { pm.response.to.have.status(201); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "New event: 201, status APPLIED, Location and X-Trace-Id headers.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-001\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 150.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T09:00:00Z\",\n  \"metadata\": { \"source\": \"mainframe-batch\", \"batchId\": \"B-9042\" }\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "B2 Duplicate evt-001",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "Idempotent replay: 200 and the original event; balance unchanged.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-001\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 150.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T09:00:00Z\",\n  \"metadata\": { \"source\": \"mainframe-batch\", \"batchId\": \"B-9042\" }\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "B3 Conflict (same id, different amount)",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 409\u0027, function () { pm.response.to.have.status(409); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "Same eventId, different content: 409.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-001\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 999.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T09:00:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "B4 Create evt-003 (latest event arrives first)",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 201\u0027, function () { pm.response.to.have.status(201); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "Out-of-order arrival.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-003\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"DEBIT\",\n  \"amount\": 30.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T18:00:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "B5 Create evt-002",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 201\u0027, function () { pm.response.to.have.status(201); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-002\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 20.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T12:00:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "B6 List events for acct-123",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events?account=acct-123",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ],
+                                                                  "query":  [
+                                                                                {
+                                                                                    "key":  "account",
+                                                                                    "value":  "acct-123"
+                                                                                }
+                                                                            ]
+                                                              },
+                                                      "description":  "Ordered by eventTimestamp: evt-001, evt-002, evt-003."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "B7 Get evt-003",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events/evt-003",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events",
+                                                                               "evt-003"
+                                                                           ]
+                                                              },
+                                                      "description":  ""
+                                                  }
+                                  },
+                                  {
+                                      "name":  "B7b Get unknown event",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 404\u0027, function () { pm.response.to.have.status(404); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events/nope",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events",
+                                                                               "nope"
+                                                                           ]
+                                                              },
+                                                      "description":  ""
+                                                  }
+                                  },
+                                  {
+                                      "name":  "B8 Balance via Gateway",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/accounts/acct-123/balance",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "accounts",
+                                                                               "acct-123",
+                                                                               "balance"
+                                                                           ]
+                                                              },
+                                                      "description":  "balance = 140.00 (150 + 20 - 30)."
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "C - Account Service directly",
+                     "description":  "Shows the second service on its own.",
+                     "item":  [
+                                  {
+                                      "name":  "C1 Balance",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{account}}/accounts/acct-123/balance",
+                                                                  "host":  [
+                                                                               "{{account}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "accounts",
+                                                                               "acct-123",
+                                                                               "balance"
+                                                                           ]
+                                                              },
+                                                      "description":  "140.00 USD."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "C2 Account details",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{account}}/accounts/acct-123",
+                                                                  "host":  [
+                                                                               "{{account}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "accounts",
+                                                                               "acct-123"
+                                                                           ]
+                                                              },
+                                                      "description":  "transactionCount 3 and recent transactions."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "C3 Apply duplicate transaction",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{account}}/accounts/acct-123/transactions",
+                                                                  "host":  [
+                                                                               "{{account}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "accounts",
+                                                                               "acct-123",
+                                                                               "transactions"
+                                                                           ]
+                                                              },
+                                                      "description":  "duplicate:true; balance unchanged.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-001\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 150.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T09:00:00Z\",\n  \"metadata\": { \"source\": \"mainframe-batch\", \"batchId\": \"B-9042\" }\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "C4 Currency mismatch (EUR on USD account)",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 422\u0027, function () { pm.response.to.have.status(422); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{account}}/accounts/acct-123/transactions",
+                                                                  "host":  [
+                                                                               "{{account}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "accounts",
+                                                                               "acct-123",
+                                                                               "transactions"
+                                                                           ]
+                                                              },
+                                                      "description":  "422: account holds USD.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-eur\",\n  \"type\": \"CREDIT\",\n  \"amount\": 1,\n  \"currency\": \"EUR\",\n  \"eventTimestamp\": \"2026-05-15T09:00:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "D - Validation (Gateway)",
+                     "description":  "All return 400 with a clear message.",
+                     "item":  [
+                                  {
+                                      "name":  "D1 Empty body",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 400\u0027, function () { pm.response.to.have.status(400); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "Lists every missing field.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "D2 Amount 0",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 400\u0027, function () { pm.response.to.have.status(400); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "amount must be greater than 0.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"bad-1\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 0,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T09:00:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "D3 Unknown type REFUND",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 400\u0027, function () { pm.response.to.have.status(400); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "type other than CREDIT/DEBIT.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"bad-2\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"REFUND\",\n  \"amount\": 5,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T09:00:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "D4 Missing account parameter",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 400\u0027, function () { pm.response.to.have.status(400); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "Required query parameter \u0027account\u0027 is missing."
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "E - Tracing",
+                     "description":  "Copy X-Trace-Id from the response and search both service logs for it.",
+                     "item":  [
+                                  {
+                                      "name":  "E1 Continue an incoming trace",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 201\u0027, function () { pm.response.to.have.status(201); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     },
+                                                                     {
+                                                                         "key":  "traceparent",
+                                                                         "value":  "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "Response X-Trace-Id must equal 4bf92f3577b34da6a3ce929d0e0e4736 and appear in both logs.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\"eventId\":\"evt-trace-2\",\"accountId\":\"acct-123\",\"type\":\"CREDIT\",\"amount\":5.00,\"currency\":\"USD\",\"eventTimestamp\":\"2026-05-15T10:05:00Z\"}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  }
+                              ]
+                 },
+                 {
+                     "name":  "F - Outage (STOP the Account Service first)",
+                     "description":  "Expectations below hold only while the Account Service is stopped. After restarting it (wait 15 s for the circuit breaker), re-send F1-F3: each returns 200 APPLIED.",
+                     "item":  [
+                                  {
+                                      "name":  "F1 Create evt-100 (Account down)",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 503\u0027, function () { pm.response.to.have.status(503); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "503 + Retry-After; event stored as PENDING.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-100\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 10.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T13:00:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "F2 Create evt-101 (Account down)",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 503\u0027, function () { pm.response.to.have.status(503); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-101\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 10.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T13:05:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "F3 Create evt-102 (Account down)",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 503\u0027, function () { pm.response.to.have.status(503); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events"
+                                                                           ]
+                                                              },
+                                                      "description":  "The circuit breaker opens; these fail fast.",
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"eventId\": \"evt-102\",\n  \"accountId\": \"acct-123\",\n  \"type\": \"CREDIT\",\n  \"amount\": 10.00,\n  \"currency\": \"USD\",\n  \"eventTimestamp\": \"2026-05-15T13:10:00Z\"\n}",
+                                                                   "options":  {
+                                                                                   "raw":  {
+                                                                                               "language":  "json"
+                                                                                           }
+                                                                               }
+                                                               }
+                                                  }
+                                  },
+                                  {
+                                      "name":  "F4 Gateway health (degraded)",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/health",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "health"
+                                                                           ]
+                                                              },
+                                                      "description":  "status DEGRADED, circuitBreaker OPEN."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "F5 Read PENDING event (still works)",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 200\u0027, function () { pm.response.to.have.status(200); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/events/evt-100",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "events",
+                                                                               "evt-100"
+                                                                           ]
+                                                              },
+                                                      "description":  "status PENDING."
+                                                  }
+                                  },
+                                  {
+                                      "name":  "F6 Balance while Account down",
+                                      "event":  [
+                                                    {
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "pm.test(\u0027Status is 503\u0027, function () { pm.response.to.have.status(503); });"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   },
+                                                        "listen":  "test"
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway}}/accounts/acct-123/balance",
+                                                                  "host":  [
+                                                                               "{{gateway}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "accounts",
+                                                                               "acct-123",
+                                                                               "balance"
+                                                                           ]
+                                                              },
+                                                      "description":  "Account Service is unreachable."
+                                                  }
+                                  }
+                              ]
+                 }
+             ]
+}
