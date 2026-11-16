@@ -1,0 +1,84 @@
+spring:
+  application:
+    name: event-gateway
+  datasource:
+    url: jdbc:h2:mem:eventdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    show-sql: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8081
+
+# --- Account Service client ---------------------------------------------------------------
+account:
+  service:
+    url: ${ACCOUNT_SERVICE_URL:http://localhost:8082}
+    connect-timeout: 1s
+    read-timeout: 2s
+
+# --- Rate limiting on POST /events (per client address) ------------------------------------
+gateway:
+  rate-limit:
+    enabled: true
+    limit-for-period: 50
+    refresh-period: 1s
+
+# --- Resilience: timeout (above) + retry with backoff + circuit breaker -------------------
+# Order of decoration: Retry( CircuitBreaker( HTTP call with timeouts ) ). Every attempt is
+# seen by the breaker; once it is OPEN, CallNotPermittedException is NOT retried (fail fast).
+resilience4j:
+  circuitbreaker:
+    instances:
+      account:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+        permitted-number-of-calls-in-half-open-state: 2
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - com.eventledger.gateway.client.AccountServiceException
+        ignore-exceptions:
+          - com.eventledger.gateway.client.AccountRejectedException   # a 4xx is the caller's fault, not an outage
+  retry:
+    instances:
+      account:
+        max-attempts: 3
+        wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        enable-randomized-wait: true          # jitter
+        randomized-wait-factor: 0.3
+        retry-exceptions:
+          - com.eventledger.gateway.client.AccountServiceException
+        ignore-exceptions:
+          - com.eventledger.gateway.client.AccountRejectedException
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,circuitbreakers,retries
+  tracing:
+    sampling:
+      probability: 1.0
+  health:
+    circuitbreakers:
+      enabled: true
+
+logging:
+  structured:
+    format:
+      console: ecs

@@ -1,0 +1,42 @@
+# Config for the Gateway when booted inside the integration test JVM (see it-account.yml).
+spring:
+  application:
+    name: event-gateway
+  datasource:
+    url: jdbc:h2:mem:it-eventdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+account:
+  service:
+    connect-timeout: 500ms
+    read-timeout: 1s
+resilience4j:
+  circuitbreaker:
+    instances:
+      account:
+        sliding-window-size: 4
+        minimum-number-of-calls: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+        record-exceptions:
+          - com.eventledger.gateway.client.AccountServiceException
+        ignore-exceptions:
+          - com.eventledger.gateway.client.AccountRejectedException
+  retry:
+    instances:
+      account:
+        max-attempts: 2
+        wait-duration: 20ms
+        retry-exceptions:
+          - com.eventledger.gateway.client.AccountServiceException
+        ignore-exceptions:
+          - com.eventledger.gateway.client.AccountRejectedException
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+management:
+  tracing:
+    sampling:
+      probability: 1.0
