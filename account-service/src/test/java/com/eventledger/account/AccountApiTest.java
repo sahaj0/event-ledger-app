@@ -107,6 +107,35 @@ class AccountApiTest {
     }
 
     @Test
+    void identicalTransactionsRacingEachOther_areAppliedExactlyOnce() throws Exception {
+        String a = newAccount();
+        int n = 20;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(n);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var futures = new java.util.ArrayList<java.util.concurrent.Future<Integer>>();
+        for (int i = 0; i < n; i++) {
+            futures.add(pool.submit(() -> {
+                start.await();
+                return mvc.perform(apply(a, a + "-race", "CREDIT", "10", "USD", "2026-05-15T14:00:00Z"))
+                        .andReturn().getResponse().getStatus();
+            }));
+        }
+        start.countDown();
+        int created = 0, duplicates = 0;
+        for (var f : futures) {
+            int s = f.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            if (s == 201) created++;
+            else if (s == 200) duplicates++;
+        }
+        pool.shutdown();
+        org.assertj.core.api.Assertions.assertThat(created).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(duplicates).isEqualTo(n - 1);
+        mvc.perform(get("/accounts/{a}", a))
+                .andExpect(jsonPath("$.transactionCount").value(1))
+                .andExpect(jsonPath("$.balance").value(10.00));
+    }
+
+    @Test
     void unknownAccountIs404() throws Exception {
         mvc.perform(get("/accounts/{a}/balance", "nope-" + UUID.randomUUID())).andExpect(status().isNotFound());
     }

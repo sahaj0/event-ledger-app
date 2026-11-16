@@ -12,6 +12,9 @@ import java.util.Map;
 @Converter
 public class MetadataConverter implements AttributeConverter<Map<String, Object>, String> {
 
+    /** Size of the database column; EventRequest rejects larger metadata with a 400 before it gets here. */
+    public static final int MAX_LENGTH = 4000;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<Map<String, Object>> TYPE = new TypeReference<>() {
     };

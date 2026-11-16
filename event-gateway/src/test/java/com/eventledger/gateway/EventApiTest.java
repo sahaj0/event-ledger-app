@@ -148,6 +148,46 @@ class EventApiTest {
         mvc.perform(submit("{not json")).andExpect(status().isBadRequest());
     }
 
+    @Test
+    void oversizedMetadataIsA400NotA500() throws Exception {
+        String big = "x".repeat(5000);
+        mvc.perform(submit("""
+                {"eventId":"%s","accountId":"a","type":"CREDIT","amount":1,"currency":"USD",
+                 "eventTimestamp":"2026-05-15T14:02:11Z","metadata":{"note":"%s"}}""".formatted(id(), big)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details[0]", containsString("metadata")));
+        verifyNoInteractions(accountClient);
+    }
+
+    @Test
+    void identicalRequestsRacingEachOther_createExactlyOneEvent() throws Exception {
+        accountAccepts();
+        String e = id(), a = id();
+        String body = json(e, a, "CREDIT", "10", "2026-05-15T14:02:11Z");
+        int n = 20;
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(n);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var futures = new java.util.ArrayList<java.util.concurrent.Future<Integer>>();
+        for (int i = 0; i < n; i++) {
+            futures.add(pool.submit(() -> {
+                start.await();
+                return mvc.perform(submit(body)).andReturn().getResponse().getStatus();
+            }));
+        }
+        start.countDown();
+        int created = 0, ok = 0;
+        for (var f : futures) {
+            int s = f.get(30, java.util.concurrent.TimeUnit.SECONDS);
+            if (s == 201) created++;
+            else if (s == 200) ok++;
+        }
+        pool.shutdown();
+        org.assertj.core.api.Assertions.assertThat(created).as("exactly one request creates the event").isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(ok).as("all others are idempotent replays").isEqualTo(n - 1);
+        mvc.perform(get("/events").param("account", a)).andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].status").value("APPLIED"));
+    }
+
     // ---- degraded behaviour (service level; the circuit breaker is covered in ResilienceTest) ----
 
     @Test

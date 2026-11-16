@@ -124,6 +124,7 @@ Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST
 | `-d "{}"` | `400` "Validation failed", lists every missing field |
 | `-d @samples/invalid-amount.json` (amount 0; try `-5` too) | `400` "amount must be greater than 0" |
 | `-d @samples/invalid-type.json` (`REFUND`) | `400` "type other than CREDIT/DEBIT" |
+| `metadata` larger than 4000 characters (as JSON) | `400` "metadata is too large" |
 | `curl localhost:8081/events` (no `account` parameter) | `400` "Required query parameter 'account' is missing" |
 
 ### Step E — Distributed tracing
@@ -200,8 +201,8 @@ mvn test
 
 | Where | What it proves |
 |---|---|
-| `account-service/.../AccountApiTest` | balance = Σcredits − Σdebits, idempotency, out-of-order, currency rule, validation, health |
-| `event-gateway/.../EventApiTest` | validation, idempotent replay, 409 on conflicting replay, chronological listing, PENDING → retry → APPLIED, reads while the Account Service is down |
+| `account-service/.../AccountApiTest` | balance = Σcredits − Σdebits, idempotency, **20 identical transactions racing at once → applied exactly once**, out-of-order, currency rule, validation, health |
+| `event-gateway/.../EventApiTest` | validation (incl. oversized `metadata` → 400), idempotent replay, **20 identical requests racing at once → exactly one 201, the rest 200**, 409 on conflicting replay, chronological listing, PENDING → retry → APPLIED, reads while the Account Service is down |
 | `event-gateway/.../ResilienceTest` | real HTTP against a stub that fails/hangs: bounded retries, circuit opens and **fails fast**, timeouts, 4xx does not trip the breaker, **`traceparent` reaches the Account Service**, incoming traces are continued |
 | `event-gateway/.../RateLimitTest` | the 4th request over a limit of 3 gets `429` + `Retry-After`; reads and health are not limited |
 | `integration-tests/.../FullFlowTest` | real Gateway + real Account Service over HTTP: out-of-order + duplicates + balances, trace id in **both services' logs**, outage → 503 → circuit open → reads still served |

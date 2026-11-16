@@ -42,7 +42,7 @@ public class Event {
     private Instant eventTimestamp;
 
     @Convert(converter = MetadataConverter.class)
-    @Column(length = 4000)
+    @Column(length = MetadataConverter.MAX_LENGTH)
     private Map<String, Object> metadata;
 
     @Enumerated(EnumType.STRING)
