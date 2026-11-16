@@ -60,7 +60,7 @@ mvn spring-boot:run
 
 Wait for `Started EventGatewayApplication`.
 
-**Or with Docker instead** (from the project root; starts both, only the Gateway is published):
+**Or with Docker instead** (from the project root; starts both plus Zipkin. Only the Gateway is published, on `localhost:8081`. The Account Service is **internal** and is not reachable from outside Docker, as the assignment requires):
 
 ```bash
 docker compose up --build
@@ -108,6 +108,7 @@ Pick **one** way to call the API:
   On Windows PowerShell use `curl.exe` instead of `curl` (plain `curl` is an alias of another command).
 
 Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST /events` only exists on 8081.
+With Maven both ports are reachable. With `docker compose up` only 8081 (and Zipkin on 9411) are published: the Account Service is an internal service and is **not exposed** outside Docker, as the assignment requires. See "Testing the Account Service under Docker" below for how to check it anyway.
 
 ### Step A — Health
 
@@ -132,12 +133,40 @@ Ports: **8081 = Gateway** (events), **8082 = Account Service** (accounts). `POST
 
 ### Step C — Account Service directly
 
+(Needs `localhost:8082` reachable. That is the case when you run with `mvn spring-boot:run`. Under Docker the Account Service is internal and not published — see "Testing the Account Service under Docker" at the end of this section.)
+
 | # | Request | Expected |
 |---|---|---|
 | C1 | `curl localhost:8082/accounts/acct-123/balance` | `140.00`, currency `USD` |
 | C2 | `curl localhost:8082/accounts/acct-123` | balance, `"transactionCount":3`, recent transactions |
 | C3 | `curl -i -X POST localhost:8082/accounts/acct-123/transactions -H "Content-Type: application/json" -d @samples/evt-001.json` | `200`, `"duplicate":true`, balance still 140.00 (the Account Service is idempotent on its own) |
 | C4 | `... -d @samples/account-eur.json` (EUR on a USD account) | `422` "holds USD" |
+
+#### Testing the Account Service under Docker
+
+The assignment says the Account Service is **internal**: only the Gateway calls it and it must not be exposed to external
+clients. So `docker-compose.yml` publishes only the Gateway (`8081`) and Zipkin (`9411`); the Account Service has no
+host port. It is still easy to check, in any of these ways:
+
+1. **Through the Gateway (the normal way).** `GET http://localhost:8081/accounts/acct-123/balance` and every
+   `POST /events` already call the Account Service for you, so Steps A, B, D–H of this guide and the Postman folders for
+   them work unchanged. The Account Service's own responses (balance, duplicate flag) are visible in the Gateway's
+   replies and in `docker compose logs account-service`.
+2. **From inside the Docker network**, without opening any port (the Account Service image has `wget`):
+   ```bash
+   docker compose exec account-service wget -qO- http://localhost:8082/health
+   docker compose exec account-service wget -qO- http://localhost:8082/accounts/acct-123/balance
+   ```
+   The Step C `POST` can be sent the same way with `wget --header "Content-Type: application/json" --post-data '<json>'`.
+3. **Temporarily publish the port for local debugging** (so Postman can call `localhost:8082` — Step C and the
+   "C - Account Service directly" Postman folder). Add this under `account-service:` in `docker-compose.yml`:
+   ```yaml
+       ports:
+         - "127.0.0.1:8082:8082"     # loopback only: reachable from this machine, not from the network
+   ```
+   then `docker compose up -d`. **Remove it again when you are done**, so the service goes back to being internal.
+4. **Run it without Docker** (`mvn spring-boot:run` in `account-service/`): then `localhost:8082` is reachable and the whole
+   of Step C works as written.
 
 ### Step D — Validation (Gateway)
 
@@ -247,6 +276,7 @@ mvn test
 
 | Symptom | Cause / fix |
 |---|---|
+| Postman requests to `localhost:8082` fail with Docker | Expected: under Docker the Account Service is internal and not published. Use the Gateway (8081), or see "Testing the Account Service under Docker". |
 | `Port 8081 (or 8082) was already in use` | Another copy is running. Stop it, or find the process: `netstat -ano \| findstr :8081` (Windows). |
 | `POST http://localhost:8082/events` → `404` | Wrong service. `/events` lives on the **Gateway (8081)**. |
 | Maven: `PKIX path building failed` | Java does not trust your network's TLS inspection certificate. Build on a network without it, or import your organisation's CA into the JDK (`keytool -importcert -cacerts`). Do not disable SSL checks. |
